@@ -1,2 +1,3 @@
 client.c
 server.c
+make

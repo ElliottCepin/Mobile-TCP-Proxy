@@ -62,21 +62,24 @@ int main(int argc, char *argv[]){
 		printf("--- New connection received ---\n");
 		
 		buf_len = 1;
+		int bytes_recieved = 0; 
 		while (buf_len > 0) {
 			packet *p = initialize_packet();
 			buf_len = read(client, buf, sizeof(buf));
+			bytes_recieved += buf_len;
+			printf("bytes recieved thusly\t%d\n", bytes_recieved);
 			while (1 && buf_len > 0){
 				int x = build_packet(buf_len, buf, p);
 				if (x) {
 					break;
-				} else {
-			}
+				} else {}
 				buf_len = read(client, buf, sizeof(buf));
+				bytes_recieved += buf_len;
+				printf("bytes recieved thusly\t%d\n", bytes_recieved);
 			}
 
 			if (buf_len != 0) print_packet(p);	
 		}
-
 		printf("--- Connection ended ---\n");
 	}
 
