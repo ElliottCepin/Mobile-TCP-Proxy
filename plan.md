@@ -24,5 +24,6 @@ If it matters, it will be in the spec, so I will check there first.
 According to the spec, cproxy has a port that it listens on, as well as the ip & port of sproxy (in that order).
 This is the same for sproxy (but the ip and port are for the telnet daemon).
 
+# sproxy sends data to telnet daemon
+To do this, sproxy has to be receiving data in the first place. I assume no responsibility for the telnet daemon itself. If there is no daemon at the port, the program should error (often on port 23, but we oughtn't assume).  
 
- 
