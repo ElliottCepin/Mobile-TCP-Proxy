@@ -19,9 +19,10 @@ This is only different from the previous section, because the data needs to be "
 With a few adjustments, I was able to get cproxy to output the cumulative bytes recieved.
 
 # cproxy sends data to sproxy
-This is going to be comparatively difficult, because I haven't had to do any real networking yet. For now, I will use server.c's code for sproxy, and I will pull sections from client.c to send data over. Before beginning, there are again some questions I'll need to answer:
-- What arguements should the final version of cproxy take
-- Does each connection (when parralellized) need to happen on a different port? - no
-- Will I need a README for the TA's?
-- And more to come!
+This is going to be comparatively difficult, because I haven't had to do any real networking yet. For now, I will use server.c's code for sproxy, and I will pull sections from client.c to send data over. Before beginning, I need to know what arguements cproxy takes.
+If it matters, it will be in the spec, so I will check there first.
+According to the spec, cproxy has a port that it listens on, as well as the ip & port of sproxy (in that order).
+This is the same for sproxy (but the ip and port are for the telnet daemon).
+
+
  

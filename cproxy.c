@@ -5,9 +5,13 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+int IGNORE_ERROR = 0;
+int PRINT_ERROR = 1;
+int PANIC_ERROR = 2;
+
 typedef struct p {
 	unsigned int *size;
-	char *data; // for now, this is char
+	void *data; 
 	int buffer;
 } packet;
 
@@ -16,22 +20,23 @@ packet *initialize_packet();
 void print_packet(packet *);
 
 int main(int argc, char *argv[]){
-	if (argc != 2){
-		fprintf(stderr, "Invalid command: %d arguments given. Please use the following format: server <server_port>", argc);
+	if (argc != 4){
+		fprintf(stderr, "Invalid command: %d arguments given.\nPlease use the following format:\n\tcproxy <listening_port> <sproxy_ip> <sproxy_port>\n", argc);
 		exit(1);
 	}
-
+	
+	/* telnet connection */
 	char *p = argv[1];
 	int port = atoi(p);
 	char buf[1024];
-
-	struct sockaddr_in srvr;
+	
+	struct sockaddr_in tel;
 
 	// set up address
-	bzero((char *)&srvr, sizeof(srvr));
-	srvr.sin_family = AF_INET;
-	srvr.sin_addr.s_addr = INADDR_ANY;
-	srvr.sin_port = htons(port);
+	bzero((char *)&tel, sizeof(tel));
+	tel.sin_family = AF_INET;
+	tel.sin_addr.s_addr = INADDR_ANY;
+	tel.sin_port = htons(port);
 
 	// passive open
 	int handle = socket(PF_INET, SOCK_STREAM, 0);
@@ -40,14 +45,43 @@ int main(int argc, char *argv[]){
 		exit(1);
 	}
 
-	int b = bind(handle, (struct sockaddr *)&srvr, sizeof(srvr));
+	int b = bind(handle, (struct sockaddr *)&tel, sizeof(tel));
 	
 	if (b < 0){
 		perror("Phase 1 - server: bind");
 		exit(1);
 	}
 
+	/* sproxy connection */	
+	char *host = argv[2];
+	p = argv[3];
+	port = atoi(p);
+	struct sockadder_in srvr;
+
+	// clear server address
+	bzero(&srvr, sizeof(srvr));
+
+	// assign values to address structure
+	srvr.sin_family = AF_INET;
+	srvr.sin_addr.s_addr = inet_addr(host);
+	srvr.sin_port = htons(port);
+
+	int server_handle = socket(PF_INET, SOCK_STREAM, AF_UNSPEC);
 	
+	// checks if socket could open
+	if (server_handle < 0) {
+		perror("Phase 1: socket"); // Does this mean "socket couldn't open">
+		exit(1);
+	}
+
+	int ok = connect(handle, (struct sockaddr *)&srvr, sizeof(srvr));
+
+	// checks if connection worked
+	if (ok < 0) {
+		perror("Phase 1: connect");
+		exit(1);
+	}
+			
 	
 	listen(handle, 5);
 	int client;
@@ -68,32 +102,41 @@ int main(int argc, char *argv[]){
 			buf_len = read(client, buf, sizeof(buf));
 			bytes_recieved += buf_len;
 			printf("bytes recieved thusly\t%d\n", bytes_recieved);
-			while (1 && buf_len > 0){
+			while (buf_len > 0){
+				// build packet returns p->buffer == p->size
+				// p->buffer == p->size iff the packet is fully built.
 				int x = build_packet(buf_len, buf, p);
+				
+				// if the packet is fully built, 
 				if (x) {
+					// send the packet, and wait for the next packet
 					break;
-				} else {}
+				}
+				// otherwise, keep building the packet.
 				buf_len = read(client, buf, sizeof(buf));
 				bytes_recieved += buf_len;
 				printf("bytes recieved thusly\t%d\n", bytes_recieved);
+			}			
+			// use packet, free packet
+			int ok = send_packet(server_handle, p, PRINT_ERROR);
+			if (ok == -1) {
+				perror("packet head send fail");
+				exit(1); // I'm not sure if we want to just give up here...
 			}
-
-			if (buf_len != 0) print_packet(p);	
+			
+			if (ok == -2) {
+				perror("packet body send fail");
+				exit(1); // I'm not sure if we want to just give up here...
+			}
 		}
+		
 		printf("--- Connection ended ---\n");
 	}
 
 
 }
 
-void print_packet(packet *p) {
-	char *str = malloc(ntohl(*(p->size)) + 1);
-	str = memcpy(str, p->data, ntohl(*(p->size)));
-	str[ntohl(*(p->size))] = '\0';
-	printf("%d\t%s", ntohl(*(p->size)), str);
-	fflush(stdout);
-}
-
+// builds on an initialized backet
 int build_packet(int buffer, void *data, packet *p){
 	if (p->size == NULL && buffer < sizeof(int)) {
 			exit(1);
@@ -114,6 +157,40 @@ int build_packet(int buffer, void *data, packet *p){
 	
 }	
 
+// on_err can be set to three values: 0, 1, and 2 (ignore errors, print errors, and panic).
+// printerrors ignores the error, but prints a warning
+// any other on_err value will be treated as 0
+// returns -1 on first write fail
+// returns -2 on second write fail
+// POSTCONDITION: packet is freed.
+int send_packet(int handle, packet *p, int on_err) {
+	if (p->buffer != ntohl(*(p->size))) {
+		if (on_err == PANIC_ERROR) {
+			fprintf(stderr, "Tried to send an incomplete packet");
+		} else if (on_err == PRINT_ERROR){
+			fprintf(stderr, "Warning: sent an incomplete packet");
+		}
+	}
+
+	// We have to use buffer instead of size, because an error could have occured
+	void *data = malloc(p->buffer); //  
+	data = memcpy(data, p->data, p->buffer);
+	
+	int ok = write(handle, &(p->buffer), sizeof(p->buffer)); 	
+	if (ok < 0) {
+		return -1;
+	}
+
+	ok = write(handle, data, p->buffer);
+	if (ok < 0) {
+		return -2;
+	}	
+
+	free_packet(p);
+	return 0; 
+}	
+
+// initializes a packet
 packet *initialize_packet() {
 	packet *p = malloc(sizeof(packet));
 	p->size = NULL; 
