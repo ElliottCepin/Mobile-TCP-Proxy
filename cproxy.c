@@ -53,6 +53,8 @@ int main(int argc, char *argv[]){
 		exit(1);
 	}
 
+	listen(handle, 5);
+
 	/* sproxy connection */	
 	char *host = argv[2];
 	p = argv[3];
@@ -84,7 +86,6 @@ int main(int argc, char *argv[]){
 	}
 			
 	
-	listen(handle, 5);
 	int client;
 	socklen_t addrlen;
 	int buf_len;
@@ -103,23 +104,27 @@ int main(int argc, char *argv[]){
 			buf_len = read(client, buf, sizeof(buf));
 			bytes_recieved += buf_len;
 			printf("bytes recieved thusly\t%d\n", bytes_recieved);
-			while (buf_len > 0){
+			/* Experiment - remove the second while loop */
+			// while (buf_len > 0){
 				// build packet returns p->buffer == p->size
 				// p->buffer == p->size iff the packet is fully built.
 				int x = build_packet(buf_len, buf, p);
-				
+				/* this is only necessary with the second while loop.
 				// if the packet is fully built, 
 				if (x) {
 					// send the packet, and wait for the next packet
 					break;
 				}
+				
 				// otherwise, keep building the packet.
 				buf_len = read(client, buf, sizeof(buf));
 				bytes_recieved += buf_len;
 				printf("bytes recieved thusly\t%d\n", bytes_recieved);
-			}			
+				*/
+			//}			
 			// use packet, free packet
-			int ok = send_packet(server_handle, p, PRINT_ERROR);
+			// set to IGNORE_ERROR, because we are sending partial packets on purpose
+			int ok = send_packet(server_handle, p, IGNORE_ERROR);
 			
 			if (ok == -1) {
 				perror("packet head send fail");
@@ -141,7 +146,16 @@ int main(int argc, char *argv[]){
 // builds on an initialized backet
 int build_packet(int buffer, void *data, packet *p){
 	if (p->size == NULL && buffer < sizeof(int)) {
-			exit(1);
+		// we have to do something about this awfully small buffer.
+		p->size = malloc(sizeof(unsigned int));
+		if (buffer > 0) {
+			p->size = memcpy(p->size, data, buffer);	
+		} else {
+			*(p->size) = 0;
+		}
+		p->data = malloc(ntohl(*(p->size)));
+		buffer -= buffer;
+		data += sizeof(unsigned int);
 	}	
 	
 	if (p->size == NULL) {
@@ -169,6 +183,7 @@ int send_packet(int handle, packet *p, int on_err) {
 	if (p->buffer != ntohl(*(p->size))) {
 		if (on_err == PANIC_ERROR) {
 			fprintf(stderr, "Tried to send an incomplete packet");
+			exit(1);
 		} else if (on_err == PRINT_ERROR){
 			fprintf(stderr, "Warning: sent an incomplete packet");
 		}
