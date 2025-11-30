@@ -1,0 +1,10 @@
+services:
+    a:
+        image: ghcr.io/russ-lewis/csc425-students
+        volumes:
+            - ./student_data_a:/root/student_data
+    b:
+        image: ghcr.io/russ-lewis/csc425-students
+        volumes:
+            - ./student_data_b:/root/student_data
+

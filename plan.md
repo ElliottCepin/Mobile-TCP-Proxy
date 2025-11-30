@@ -26,4 +26,7 @@ This is the same for sproxy (but the ip and port are for the telnet daemon).
 
 # sproxy sends data to telnet daemon
 To do this, sproxy has to be receiving data in the first place. I assume no responsibility for the telnet daemon itself. If there is no daemon at the port, the program should error (often on port 23, but we oughtn't assume).  
+This is now working; but we don't have that much evidence, because we're sending but not receiving...
 
+# polling, sending and reciving data
+The last three steps have to be merged into one, because they are all achieved through the same mechanism.
