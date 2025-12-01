@@ -30,3 +30,8 @@ This is now working; but we don't have that much evidence, because we're sending
 
 # polling, sending and reciving data
 The last three steps have to be merged into one, because they are all achieved through the same mechanism.
+- poll on each connection
+- poll on the listenning socket
+- when the listening socket accepts, how are we to select a sending socket?
+	- it turns out that accept returns a structure that contains identifying informtaion
+	- this can be used to identify who to send what information to.  

@@ -20,12 +20,17 @@ packet *initialize_packet();
 void print_packet(packet *);
 void free_packet(packet *);
 int send_packet(int, packet *, int);
+int new_connection(char *, int);
+
 int main(int argc, char *argv[]){
 	if (argc != 4){
 		fprintf(stderr, "Invalid command: %d arguments given.\nPlease use the following format:\n\tcproxy <listening_port> <sproxy_ip> <sproxy_port>\n", argc);
 		exit(1);
 	}
 	
+	pollfd fds[100];
+	in_addr_t addresses[100];
+
 	/* telnet connection */
 	char *p = argv[1];
 	int port = atoi(p);
@@ -59,38 +64,21 @@ int main(int argc, char *argv[]){
 	char *host = argv[2];
 	p = argv[3];
 	port = atoi(p);
-	struct sockaddr_in srvr;
-
-	// clear server address
-	bzero(&srvr, sizeof(srvr));
-
-	// assign values to address structure
-	srvr.sin_family = AF_INET;
-	srvr.sin_addr.s_addr = inet_addr(host);
-	srvr.sin_port = htons(port);
-
-	int server_handle = socket(PF_INET, SOCK_STREAM, AF_UNSPEC);
 	
-	// checks if socket could open
-	if (server_handle < 0) {
-		perror("Phase 1: socket"); // Does this mean "socket couldn't open">
-		exit(1);
-	}
-
-	int ok = connect(server_handle, (struct sockaddr *)&srvr, sizeof(srvr));
-
-	// checks if connection worked
-	if (ok < 0) {
-		perror("Phase 1: connect");
-		exit(1);
-	}
-			
+	int server_handle = new_connection(host, port);
 	
 	int client;
 	socklen_t addrlen;
 	int buf_len;
 	while (1) {
-		client = accept(handle, NULL, NULL);
+		
+		// we need to have some specific information here such that we can actually use this stuff.
+		// man sockaddr_in has some good information here
+		struct sockaddr_in incoming;
+		client = accept(handle, &incoming, sizeof(incoming));		
+	
+					
+
 		if (client <= 0){
 			perror("Phase 1 - server: accept");	
 			exit(1);
@@ -140,6 +128,40 @@ int main(int argc, char *argv[]){
 		printf("--- Connection ended ---\n");
 	}
 
+
+}
+
+// this gets run when a new telnet connects to cproxy
+// host, p, and port will always be the same. 
+int new_connection(char *host, int port) {
+	/* sproxy connection */	
+	struct sockaddr_in srvr;
+	int server_handle = socket(PF_INET, SOCK_STREAM, AF_UNSPEC);
+
+	// clear server address
+	bzero(&srvr, sizeof(srvr));
+
+	// assign values to address structure
+	srvr.sin_family = AF_INET;
+	srvr.sin_addr.s_addr = inet_addr(host);
+	srvr.sin_port = htons(port);
+
+	
+	// checks if socket could open
+	if (server_handle < 0) {
+		perror("Phase 1: socket"); // Does this mean "socket couldn't open">
+		exit(1);
+	}
+
+	int ok = connect(server_handle, (struct sockaddr *)&srvr, sizeof(srvr));
+
+	// checks if connection worked
+	if (ok < 0) {
+		perror("Phase 1: connect");
+		exit(1);
+	}
+
+	return server_handle;
 
 }
 
