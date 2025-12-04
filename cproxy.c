@@ -16,7 +16,7 @@ typedef struct p {
 	int buffer;
 } packet;
 
-int build_packet(int, void*, packet*);
+int build_packet(int, void*, packet*, int);
 packet *initialize_packet();
 void print_packet(packet *);
 void free_packet(packet *);
@@ -29,7 +29,7 @@ int send_raw(int, packet *, int);
 const int LISTEN_SOCKET = 0;
 const int BUF_LEN = 100;
 const int IS_CPROXY = 1;
-
+const int IS_SPROXY = !IS_CPROXY;
 int main(int argc, char *argv[]){
 	if (argc != 4){
 		fprintf(stderr, "Invalid command: %d arguments given.\nPlease use the following format:\n\tcproxy <listening_port> <sproxy_ip> <sproxy_port>\n", argc);
@@ -103,14 +103,14 @@ int main(int argc, char *argv[]){
 					polling[count].events = POLLIN;
 					polling2[count].fd = client;
 					polling2[count].events = POLLIN;
-					proxy_send(polling2[count].fd, polling[count].fd, buf, IS_CPROXY);
+					proxy_send(polling2[count].fd, polling[count].fd, buf, IS_SPROXY);
 				}
 			} else {
 				if (polling[i].revents != 0) {
 					proxy_send(polling[i].fd, polling2[i].fd, buf, IS_CPROXY);	
 				}	
 				if (polling2[i].revents != 0) {
-					proxy_send(polling2[i].fd, polling[i].fd, buf, IS_CPROXY);
+					proxy_send(polling2[i].fd, polling[i].fd, buf, IS_SPROXY);
 				}	
 			}
 		}	
@@ -134,7 +134,7 @@ int proxy_send(int client, int server_handle, char *buf, int raw) {
 		// while (buf_len > 0){
 			// build packet returns p->buffer == p->size
 			// p->buffer == p->size iff the packet is fully built.
-			int x = build_packet(buf_len, buf, p);
+			int x = build_packet(buf_len, buf, p, !raw);
 			/* this is only necessary with the second while loop.
 			// if the packet is fully built, 
 			if (x) {
@@ -205,8 +205,8 @@ int new_connection_s(char *host, int port) {
 
 
 // builds on an initialized backet
-int build_packet(int buffer, void *data, packet *p){
-	if (p->size == NULL && buffer < sizeof(int)) {
+int build_packet(int buffer, void *data, packet *p, int raw){
+	if (p->size == NULL && buffer < sizeof(int) && !raw) {
 		// we have to do something about this awfully small buffer.
 		p->size = malloc(sizeof(unsigned int));
 		if (buffer > 0) {
@@ -219,18 +219,21 @@ int build_packet(int buffer, void *data, packet *p){
 		data += sizeof(unsigned int);
 	}	
 	
-	if (p->size == NULL) {
+	if (p->size == NULL && !raw) {
 		p->size = malloc(sizeof(unsigned int));
 		p->size = memcpy(p->size, data, sizeof(unsigned int));	
 		p->data = malloc(ntohl(*(p->size)));
 		buffer -= sizeof(unsigned int);
 		data += sizeof(unsigned int);
 	} 
+	if (p->size == NULL & raw) {
+		p->data = malloc(buffer);
+	} 
 	if (buffer != 0) {
 		memcpy(p->data + p->buffer, data, buffer);
 		p->buffer += buffer;
 	}
-	return p->buffer == ntohl(*(p->size));
+	return p->buffer == ntohl(*(p->size)) || raw;
 	
 }	
 
@@ -288,7 +291,7 @@ int send_raw(int handle, packet *p, int on_err) {
 	// 	return -1;
 	// }
 
-	ok = write(handle, data, p->buffer);
+	int ok = write(handle, data, p->buffer);
 	if (ok < 0) {
 		return -2;
 	}	
