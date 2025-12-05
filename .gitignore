@@ -3,3 +3,4 @@ cproxy
 sproxy
 server.c
 make
+venv/
