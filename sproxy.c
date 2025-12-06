@@ -104,15 +104,15 @@ int main(int argc, char *argv[]){
 					bitmap[count] = 0;
 					polling[count+1].fd = client;
 					polling[count+1].events = POLLIN;
-					bitmap[count+1] == 0;
+					bitmap[count+1] = 0;
 					
 				}
 			} else {
-				if (polling[i+1].revents != 0) {
+				if (polling[i+1].revents & POLLIN) {
 					printf("cproxy --> sproxy || sproxy --> telnet daemon");fflush(stdout);
 					int shut = proxy_send(polling[i+1].fd, polling[i].fd, buf, IS_CPROXY);
 					if (shut == 1) {
-						shutdown(polling[i+1].fd, SHUT_WR);
+						shutdown(polling[i].fd, SHUT_WR);
 						bitmap[i+1] = 1;
 						if (bitmap[i]) {
 							close(polling[i+1].fd);
@@ -122,13 +122,13 @@ int main(int argc, char *argv[]){
 						}
 					}
 				}	
-				if (polling[i].revents != 0) {
+				if (polling[i].revents & POLLIN) {
 					printf("cproxy --> telnet || sproxy --> cproxy"); fflush(stdout);
 					int shut = proxy_send(polling[i].fd, polling[i+1].fd, buf, IS_SPROXY);	fflush(stdout);
 					if (shut == 1) {
-						shutdown(polling[i].fd, SHUT_WR); 
+						shutdown(polling[i+1].fd, SHUT_WR); 
 						bitmap[i] = 1;
-						if (bitmap[i+1]) {
+						if (bitmap[i+1] && polling[i].fd != -1) {
 							close(polling[i+1].fd);
 							close(polling[i].fd);
 							polling[i].fd = -1;
