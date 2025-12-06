@@ -71,7 +71,7 @@ int main(int argc, char *argv[]){
 
 	polling[LISTEN_SOCKET].fd = handle;
 	polling[LISTEN_SOCKET].events = POLLIN;
-	count++;
+	count = 1;
 
 	/* sproxy connection */	
 	char *host = argv[2];
@@ -88,7 +88,6 @@ int main(int argc, char *argv[]){
 		for (int i=0; i<count; i++) {
 			if (i == LISTEN_SOCKET) {
 				if (polling[LISTEN_SOCKET].revents != 0) {
-					printf("New socket");fflush(stdout);
 					count_updater = 2;					
 					client = accept(polling[LISTEN_SOCKET].fd, NULL, NULL);							
 					
@@ -97,7 +96,7 @@ int main(int argc, char *argv[]){
 						exit(1);
 					}
 					printf("--- New connection received ---\n");
-					
+						
 
 					polling[count].fd = new_connection_s(host, port);
 					polling[count].events = POLLIN;
@@ -108,11 +107,27 @@ int main(int argc, char *argv[]){
 					
 				}
 			} else {
-				if (polling[i+1].revents & POLLIN) {
+				if (polling[i+1].revents != 0 && !bitmap[i]) {
 					printf("cproxy --> sproxy || sproxy --> telnet daemon");fflush(stdout);
 					int shut = proxy_send(polling[i+1].fd, polling[i].fd, buf, IS_CPROXY);
+					printf("shut\t%d\tcount\t%d\n", shut, count);fflush(stdout);
 					if (shut == 1) {
 						shutdown(polling[i].fd, SHUT_WR);
+						bitmap[i] = 1;
+						if (bitmap[i+1]) {
+							close(polling[i+1].fd);
+							close(polling[i].fd);
+							polling[i+1].fd = -1;
+							polling[i].fd = -1;
+						}
+					}
+				}	
+				if (polling[i].revents != 0 && !bitmap[i+1]) {
+					printf("cproxy --> telnet || sproxy --> cproxy");fflush(stdout);
+					int shut = proxy_send(polling[i].fd, polling[i+1].fd, buf, IS_SPROXY);
+					printf("shut\t%d\tcount\t%d\n", shut, count);fflush(stdout);
+					if (shut == 1) {
+						shutdown(polling[i+1].fd, SHUT_WR);
 						bitmap[i+1] = 1;
 						if (bitmap[i]) {
 							close(polling[i+1].fd);
@@ -122,24 +137,10 @@ int main(int argc, char *argv[]){
 						}
 					}
 				}	
-				if (polling[i].revents & POLLIN) {
-					printf("cproxy --> telnet || sproxy --> cproxy"); fflush(stdout);
-					int shut = proxy_send(polling[i].fd, polling[i+1].fd, buf, IS_SPROXY);	fflush(stdout);
-					if (shut == 1) {
-						shutdown(polling[i+1].fd, SHUT_WR); 
-						bitmap[i] = 1;
-						if (bitmap[i+1] && polling[i].fd != -1) {
-							close(polling[i+1].fd);
-							close(polling[i].fd);
-							polling[i].fd = -1;
-							polling[i+1].fd = -1;
-						}
-					}
-				}	
-				i++;
+				i++; // we couldn't do i+=2 in the for loop, because we need to at polling[1];
 			}
 		}	
-		count += count_updater;
+		count += count_updater; // updates poll count if there is anything to change; can't happen in the for
 	}
 
 
@@ -190,7 +191,6 @@ int proxy_send(int client, int server_handle, char *buf, int raw) {
 			perror("packet body send fail");
 			exit(1); // I'm not sure if we want to just give up here...
 		}
-	return 0;
 }
 // this gets run when a new telnet connects to cproxy
 // host, p, and port will always be the same. 
