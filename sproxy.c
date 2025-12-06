@@ -32,7 +32,7 @@ const int IS_CPROXY = 0;
 const int IS_SPROXY = !IS_CPROXY;
 int main(int argc, char *argv[]){
 	if (argc != 4){
-		fprintf(stderr, "Invalid command: %d arguments given.\nPlease use the following format:\n\tcproxy <listening_port> <sproxy_ip> <sproxy_port>\n", argc);
+		fprintf(stderr, "Invalid command: %d arguments given.\nPlease use the following format:\n\tsproxy <listening_port> <telnet_daemon_ip> <telnet_daemon_port>\n", argc);
 		exit(1);
 	}
 	
