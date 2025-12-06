@@ -27,7 +27,7 @@ int proxy_send(int, int, char*, int);
 int send_raw(int, packet *, int);
 
 const int LISTEN_SOCKET = 0;
-const int BUF_LEN = 100;
+const int BUF_LEN = 1024;
 const int IS_CPROXY = 1;
 const int IS_SPROXY = !IS_CPROXY;
 int main(int argc, char *argv[]){
@@ -37,13 +37,13 @@ int main(int argc, char *argv[]){
 	}
 	
 	struct pollfd polling[BUF_LEN];
-	struct pollfd polling2[BUF_LEN];
+	int bitmap[BUF_LEN];
 	int count = 0;
 
 	/* telnet listener*/
 	char *p = argv[1];
 	int port = atoi(p);
-	char buf[1024];
+	char buf[BUF_LEN];
 	
 	struct sockaddr_in tel;
 
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]){
 	tel.sin_family = AF_INET;
 	tel.sin_addr.s_addr = INADDR_ANY;
 	tel.sin_port = htons(port);
-
+	
 	// passive open
 	int handle = socket(PF_INET, SOCK_STREAM, 0);
 	if (handle <= 0) {
@@ -83,13 +83,13 @@ int main(int argc, char *argv[]){
 	socklen_t addrlen;
 	
 	while (1) {
-		poll(polling, 2, -1);
-		
+		poll(polling, count, -1);
 		int count_updater = 0; // this allows me to delay the update of count until out of loop; no polling has happened, no reason to check the last item.
 		for (int i=0; i<count; i++) {
 			if (i == LISTEN_SOCKET) {
 				if (polling[LISTEN_SOCKET].revents != 0) {
-					count_updater++;					
+					printf("New socket");fflush(stdout);
+					count_updater = 2;					
 					client = accept(polling[LISTEN_SOCKET].fd, NULL, NULL);							
 					
 					if (client <= 0){
@@ -101,17 +101,42 @@ int main(int argc, char *argv[]){
 
 					polling[count].fd = new_connection_s(host, port);
 					polling[count].events = POLLIN;
-					polling2[count].fd = client;
-					polling2[count].events = POLLIN;
-					proxy_send(polling2[count].fd, polling[count].fd, buf, IS_SPROXY);
+					bitmap[count] = 0;
+					polling[count+1].fd = client;
+					polling[count+1].events = POLLIN;
+					bitmap[count+1] == 0;
+					
 				}
 			} else {
+				if (polling[i+1].revents != 0) {
+					printf("cproxy --> sproxy || sproxy --> telnet daemon");fflush(stdout);
+					int shut = proxy_send(polling[i+1].fd, polling[i].fd, buf, IS_CPROXY);
+					if (shut == 1) {
+						shutdown(polling[i+1].fd, SHUT_WR);
+						bitmap[i+1] = 1;
+						if (bitmap[i]) {
+							close(polling[i+1].fd);
+							close(polling[i].fd);
+							polling[i+1].fd = -1;
+							polling[i].fd = -1;
+						}
+					}
+				}	
 				if (polling[i].revents != 0) {
-					proxy_send(polling[i].fd, polling2[i].fd, buf, IS_CPROXY);	
+					printf("cproxy --> telnet || sproxy --> cproxy"); fflush(stdout);
+					int shut = proxy_send(polling[i].fd, polling[i+1].fd, buf, IS_SPROXY);	fflush(stdout);
+					if (shut == 1) {
+						shutdown(polling[i].fd, SHUT_WR); 
+						bitmap[i] = 1;
+						if (bitmap[i+1]) {
+							close(polling[i+1].fd);
+							close(polling[i].fd);
+							polling[i].fd = -1;
+							polling[i+1].fd = -1;
+						}
+					}
 				}	
-				if (polling2[i].revents != 0) {
-					proxy_send(polling2[i].fd, polling[i].fd, buf, IS_SPROXY);
-				}	
+				i++;
 			}
 		}	
 		count += count_updater;
@@ -125,16 +150,18 @@ int main(int argc, char *argv[]){
 int proxy_send(int client, int server_handle, char *buf, int raw) {
 	int buf_len = 1;
 	int bytes_recieved = 0; 
-	while (buf_len > 0) {
 		packet *p = initialize_packet();
-		buf_len = read(client, buf, sizeof(buf));
+		buf_len = read(client, buf, BUF_LEN);
 		bytes_recieved += buf_len;
 		printf("bytes recieved thusly\t%d\n", bytes_recieved);
+		if (buf_len == 0) {
+			return 1;
+		}
 		/* Experiment - remove the second while loop */
 		// while (buf_len > 0){
 			// build packet returns p->buffer == p->size
 			// p->buffer == p->size iff the packet is fully built.
-			int x = build_packet(buf_len, buf, p, !raw);
+			int x = build_packet(buf_len, buf, p, raw);
 			/* this is only necessary with the second while loop.
 			// if the packet is fully built, 
 			if (x) {
@@ -151,7 +178,7 @@ int proxy_send(int client, int server_handle, char *buf, int raw) {
 		// use packet, free packet
 		// set to IGNORE_ERROR, because we are sending partial packets on purpose
 		int ok;
-		if (raw) ok = send_raw(server_handle, p, IGNORE_ERROR);
+		if (!raw) ok = send_raw(server_handle, p, IGNORE_ERROR);
 		else ok = send_packet(server_handle, p, IGNORE_ERROR);
 		
 		if (ok == -1) {
@@ -163,7 +190,7 @@ int proxy_send(int client, int server_handle, char *buf, int raw) {
 			perror("packet body send fail");
 			exit(1); // I'm not sure if we want to just give up here...
 		}
-	}
+	return 0;
 }
 // this gets run when a new telnet connects to cproxy
 // host, p, and port will always be the same. 
@@ -218,7 +245,6 @@ int build_packet(int buffer, void *data, packet *p, int raw){
 		buffer -= buffer;
 		data += sizeof(unsigned int);
 	}	
-	
 	if (p->size == NULL && !raw) {
 		p->size = malloc(sizeof(unsigned int));
 		p->size = memcpy(p->size, data, sizeof(unsigned int));	
@@ -226,14 +252,14 @@ int build_packet(int buffer, void *data, packet *p, int raw){
 		buffer -= sizeof(unsigned int);
 		data += sizeof(unsigned int);
 	} 
-	if (p->size == NULL & raw) {
+	if (p->data == NULL && raw) {
 		p->data = malloc(buffer);
 	} 
 	if (buffer != 0) {
 		memcpy(p->data + p->buffer, data, buffer);
 		p->buffer += buffer;
 	}
-	return p->buffer == ntohl(*(p->size)) || raw;
+	return raw;
 	
 }	
 
@@ -244,7 +270,7 @@ int build_packet(int buffer, void *data, packet *p, int raw){
 // returns -2 on second write fail
 // POSTCONDITION: packet is freed.
 int send_packet(int handle, packet *p, int on_err) {
-	if (p->buffer != ntohl(*(p->size))) {
+	if (p->buffer != 1) {
 		if (on_err == PANIC_ERROR) {
 			fprintf(stderr, "Tried to send an incomplete packet");
 			exit(1);
@@ -254,15 +280,14 @@ int send_packet(int handle, packet *p, int on_err) {
 	}
 
 	// We have to use buffer instead of size, because an error could have occured
-	void *data = malloc(p->buffer); //  
+	void *data = malloc(p->buffer + sizeof(p->buffer)); //  
+	void *b = data;
+	data += sizeof(p->buffer);
+	b = memcpy(b, &(p->buffer), sizeof(p->buffer));
 	data = memcpy(data, p->data, p->buffer);
-	
-	int ok = write(handle, &(p->buffer), sizeof(p->buffer)); 	
-	if (ok < 0) {
-		return -1;
-	}
+		
 
-	ok = write(handle, data, p->buffer);
+	int ok = write(handle, b, p->buffer + sizeof(p->buffer));
 	if (ok < 0) {
 		return -2;
 	}	
@@ -273,7 +298,7 @@ int send_packet(int handle, packet *p, int on_err) {
 
 
 int send_raw(int handle, packet *p, int on_err) {
-	if (p->buffer != ntohl(*(p->size))) {
+	if (p->buffer != 1) {
 		if (on_err == PANIC_ERROR) {
 			fprintf(stderr, "Tried to send an incomplete packet");
 			exit(1);
